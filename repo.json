@@ -1,0 +1,7 @@
+{
+  "name": "dephy_wifi",
+  "version": "dephy-wifi-v0.1.0",
+  "type": "zephyr-module",
+  "description": "Reusable WiFi STA, SoftAP, and scan helper for Dephy Zephyr products"
+}
+

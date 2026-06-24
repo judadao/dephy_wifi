@@ -1,0 +1,18 @@
+CC ?= gcc
+CFLAGS ?= -Wall -Wextra -std=c11 -g -D_POSIX_C_SOURCE=200809L
+OUTDIR ?= build_out
+
+.PHONY: test clean
+
+$(OUTDIR):
+	mkdir -p $(OUTDIR)
+
+$(OUTDIR)/smoke_wifi: tests/smoke_wifi.c src/wifi.c include/dephy_wifi/wifi.h | $(OUTDIR)
+	$(CC) $(CFLAGS) -Iinclude tests/smoke_wifi.c src/wifi.c -o $@
+
+test: $(OUTDIR)/smoke_wifi
+	$<
+
+clean:
+	rm -rf $(OUTDIR)
+

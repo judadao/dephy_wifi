@@ -1,0 +1,8 @@
+mainmenu "Dephy WiFi"
+
+source "Kconfig.zephyr"
+
+config DEPHY_WIFI
+	bool "Dephy WiFi module"
+	default y
+

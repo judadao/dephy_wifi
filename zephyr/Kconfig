@@ -1,0 +1,4 @@
+config DEPHY_WIFI
+	bool "Dephy WiFi module"
+	default y
+
