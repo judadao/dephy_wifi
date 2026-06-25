@@ -2,3 +2,23 @@ config DEPHY_WIFI
 	bool "Dephy WiFi module"
 	default y
 
+if DEPHY_WIFI
+
+config DEPHY_WIFI_SOFTAP
+	bool "Dephy WiFi SoftAP support"
+	default y
+
+config DEPHY_WIFI_SCAN
+	bool "Dephy WiFi scan JSON support"
+	default y
+
+config DEPHY_WIFI_RECONFIGURE
+	bool "Dephy WiFi background STA reconfigure support"
+	default y
+
+config DEPHY_WIFI_RECONFIGURE_STACK_SIZE
+	int "Dephy WiFi background STA reconfigure stack size"
+	default 3072
+	depends on DEPHY_WIFI_RECONFIGURE
+
+endif # DEPHY_WIFI
