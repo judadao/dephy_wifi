@@ -23,3 +23,17 @@ char ip[DEPHY_WIFI_HOST_MAX];
 dephy_wifi_start(&settings, ip, sizeof(ip));
 ```
 
+## Systematic Regression Testing
+
+From the workspace root, run the shared pytest regression module:
+
+```sh
+../dephy_testkit/.venv/bin/python -m pytest ../dephy_testkit/tests/regression --module dephy_wifi
+../dephy_testkit/.venv/bin/python -m pytest ../dephy_testkit/tests/regression --module dephy_wifi --profile integration
+```
+
+The local repo test remains:
+
+```sh
+make -f Makefile.linux test
+```
