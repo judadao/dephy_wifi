@@ -55,6 +55,9 @@ int dephy_wifi_scan_json(char *buf, size_t buf_cap)
 #include <zephyr/net/dhcpv4_server.h>
 #endif
 #include <zephyr/net/wifi_mgmt.h>
+#if defined(CONFIG_WIFI_ESP32)
+#include <esp_wifi.h>
+#endif
 
 LOG_MODULE_REGISTER(dephy_wifi, LOG_LEVEL_INF);
 
@@ -146,6 +149,28 @@ static void copy_ip(char *out, size_t cap, const char *fallback)
         }
     }
     snprintf(out, cap, "%s", fallback ? fallback : "0.0.0.0");
+}
+
+static void disable_sta_power_save(void)
+{
+    struct wifi_ps_params ps = {
+        .enabled = WIFI_PS_DISABLED,
+    };
+    int rc;
+
+    rc = net_mgmt(NET_REQUEST_WIFI_PS, sta_iface, &ps, sizeof(ps));
+    if (rc != 0) {
+        LOG_WRN("STA power-save disable failed (%d)", rc);
+    }
+
+#if defined(CONFIG_WIFI_ESP32)
+    rc = esp_wifi_set_ps(WIFI_PS_NONE);
+    if (rc != 0) {
+        LOG_WRN("ESP32 STA power-save disable failed (%d)", rc);
+    } else {
+        LOG_INF("ESP32 STA power-save disabled");
+    }
+#endif
 }
 
 #if defined(CONFIG_DEPHY_WIFI_SCAN)
@@ -628,13 +653,7 @@ static int start_sta(const dephy_wifi_settings_t *settings,
         return rc;
     }
 
-    struct wifi_ps_params ps = {
-        .enabled = WIFI_PS_DISABLED,
-    };
-    rc = net_mgmt(NET_REQUEST_WIFI_PS, sta_iface, &ps, sizeof(ps));
-    if (rc != 0) {
-        LOG_WRN("STA power-save disable failed (%d)", rc);
-    }
+    disable_sta_power_save();
 
     if (!settings->dhcp_enabled) {
         announce_sta_ipv4(settings);
