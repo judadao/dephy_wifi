@@ -43,12 +43,16 @@ int dephy_wifi_scan_json(char *buf, size_t buf_cap)
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/net/dhcpv4.h>
-#include <zephyr/net/dhcpv4_server.h>
 #include <zephyr/net/net_event.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/net_mgmt.h>
+#if defined(CONFIG_NET_DHCPV4)
+#include <zephyr/net/dhcpv4.h>
+#endif
+#if defined(CONFIG_NET_DHCPV4_SERVER)
+#include <zephyr/net/dhcpv4_server.h>
+#endif
 #include <zephyr/net/wifi_mgmt.h>
 
 LOG_MODULE_REGISTER(dephy_wifi, LOG_LEVEL_INF);
@@ -338,6 +342,7 @@ static int configure_ap_ipv4(const dephy_wifi_settings_t *settings)
         return -EIO;
     }
 
+#if defined(CONFIG_NET_DHCPV4_SERVER)
     pool_start = addr;
     pool_start.s4_addr[3] = (uint8_t)(pool_start.s4_addr[3] + 10);
     if (net_dhcpv4_server_start(ap_iface, &pool_start) != 0) {
@@ -345,6 +350,10 @@ static int configure_ap_ipv4(const dephy_wifi_settings_t *settings)
     } else {
         LOG_INF("SoftAP DHCPv4 server started at %s", ip);
     }
+#else
+    ARG_UNUSED(pool_start);
+    LOG_INF("SoftAP DHCPv4 server disabled by build config");
+#endif
     return 0;
 }
 
@@ -388,6 +397,40 @@ static int start_ap(const dephy_wifi_settings_t *settings)
     if (k_sem_take(&ap_enabled_sem, K_SECONDS(10)) != 0) {
         LOG_WRN("SoftAP enable event timeout; continuing after request success");
     }
+    return 0;
+}
+
+static int configure_sta_ipv4(const dephy_wifi_settings_t *settings)
+{
+    struct net_in_addr addr;
+    struct net_in_addr netmask;
+    struct net_in_addr gateway;
+    const char *ip = settings->device_ip[0] ?
+        settings->device_ip : "192.168.1.50";
+    const char *mask = settings->netmask[0] ?
+        settings->netmask : "255.255.255.0";
+    const char *gw = settings->gateway[0] ?
+        settings->gateway : "192.168.1.1";
+
+    if (net_addr_pton(AF_INET, ip, &addr) != 0 ||
+        net_addr_pton(AF_INET, mask, &netmask) != 0 ||
+        net_addr_pton(AF_INET, gw, &gateway) != 0) {
+        LOG_ERR("invalid STA static IPv4 ip=%s mask=%s gw=%s",
+                ip, mask, gw);
+        return -EINVAL;
+    }
+
+    if (!net_if_ipv4_addr_lookup(&addr, NULL) &&
+        !net_if_ipv4_addr_add(sta_iface, &addr, NET_ADDR_MANUAL, 0)) {
+        LOG_ERR("failed to assign STA IPv4 %s", ip);
+        return -EIO;
+    }
+    if (!net_if_ipv4_set_netmask_by_addr(sta_iface, &addr, &netmask)) {
+        LOG_ERR("failed to set STA netmask %s", mask);
+        return -EIO;
+    }
+    net_if_ipv4_set_gw(sta_iface, &gateway);
+    LOG_INF("STA static IPv4 %s gw=%s", ip, gw);
     return 0;
 }
 
@@ -436,6 +479,7 @@ static int start_sta(const dephy_wifi_settings_t *settings,
     }
 
     if (settings->dhcp_enabled) {
+#if defined(CONFIG_NET_DHCPV4)
         net_dhcpv4_start(sta_iface);
         if (k_sem_take(&sta_ip_sem, K_SECONDS(WIFI_IP_TIMEOUT_S)) != 0) {
             LOG_ERR("STA DHCP timeout");
@@ -449,8 +493,16 @@ static int start_sta(const dephy_wifi_settings_t *settings,
         }
         LOG_INF("STA IPv4 %s", ip_addr);
         return 0;
+#else
+        LOG_ERR("STA DHCP requested but CONFIG_NET_DHCPV4 is disabled");
+        return -ENOTSUP;
+#endif
     }
 
+    rc = configure_sta_ipv4(settings);
+    if (rc != 0) {
+        return rc;
+    }
     copy_ip(ip_addr, ip_addr_cap,
             settings->device_ip[0] ? settings->device_ip : "0.0.0.0");
     return 0;
@@ -630,6 +682,7 @@ int dephy_wifi_start(const dephy_wifi_settings_t *settings,
 
     ensure_callbacks();
     ensure_wifi_interfaces();
+    ensure_sta_reconfigure_thread();
 
     rc = start_ap(settings);
     if (rc != 0) {
@@ -637,16 +690,22 @@ int dephy_wifi_start(const dephy_wifi_settings_t *settings,
     }
 
     if (settings->wifi_ssid[0]) {
-        (void)dephy_wifi_apply_settings(settings);
-        copy_ip(ip_addr, ip_addr_cap,
-                settings->device_ip[0] ? settings->device_ip : "192.168.4.1");
+        rc = start_sta(settings, ip_addr, ip_addr_cap);
+        if (rc != 0) {
+            return rc;
+        }
+        k_mutex_lock(&sta_settings_lock, K_FOREVER);
+        sta_settings = *settings;
+        k_mutex_unlock(&sta_settings_lock);
         return 0;
     }
 
+    k_mutex_lock(&sta_settings_lock, K_FOREVER);
+    memset(&sta_settings, 0, sizeof(sta_settings));
+    k_mutex_unlock(&sta_settings_lock);
     copy_ip(ip_addr, ip_addr_cap,
             settings->device_ip[0] ? settings->device_ip : "192.168.4.1");
     return 0;
 }
 
 #endif
-
