@@ -614,13 +614,6 @@ static int start_sta(const dephy_wifi_settings_t *settings,
     params.mfp = WIFI_MFP_OPTIONAL;
     params.timeout = SYS_FOREVER_MS;
 
-    if (!settings->dhcp_enabled) {
-        rc = configure_sta_ipv4(settings, ip_addr, ip_addr_cap);
-        if (rc != 0) {
-            return rc;
-        }
-    }
-
     for (int attempt = 1; attempt <= WIFI_CONNECT_ATTEMPTS; attempt++) {
         k_sem_reset(&sta_connected_sem);
         k_sem_reset(&sta_ip_sem);
@@ -656,6 +649,10 @@ static int start_sta(const dephy_wifi_settings_t *settings,
     disable_sta_power_save();
 
     if (!settings->dhcp_enabled) {
+        rc = configure_sta_ipv4(settings, ip_addr, ip_addr_cap);
+        if (rc != 0) {
+            return rc;
+        }
         announce_sta_ipv4(settings);
     }
 
@@ -889,7 +886,6 @@ int dephy_wifi_start(const dephy_wifi_settings_t *settings,
 
     ensure_callbacks();
     ensure_wifi_interfaces();
-    ensure_sta_reconfigure_thread();
 
     rc = start_ap(settings);
     if (rc != 0) {
@@ -897,19 +893,22 @@ int dephy_wifi_start(const dephy_wifi_settings_t *settings,
     }
 
     if (settings->wifi_ssid[0]) {
-        rc = start_sta(settings, ip_addr, ip_addr_cap);
-        if (rc != 0) {
-            return rc;
-        }
+#if defined(CONFIG_DEPHY_WIFI_RECONFIGURE)
+        ensure_sta_reconfigure_thread();
+
         k_mutex_lock(&sta_settings_lock, K_FOREVER);
         sta_settings = *settings;
         k_mutex_unlock(&sta_settings_lock);
-        return 0;
+#endif
+
+        return start_sta(settings, ip_addr, ip_addr_cap);
     }
 
+#if defined(CONFIG_DEPHY_WIFI_RECONFIGURE)
     k_mutex_lock(&sta_settings_lock, K_FOREVER);
     memset(&sta_settings, 0, sizeof(sta_settings));
     k_mutex_unlock(&sta_settings_lock);
+#endif
     copy_ip(ip_addr, ip_addr_cap,
             settings->device_ip[0] ? settings->device_ip : "192.168.4.1");
     return 0;
